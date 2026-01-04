@@ -386,14 +386,45 @@ function formatAssistantMessage(
      * server tool blocks (server_tool_use, web_search_tool_result) for multi-turn.
      * Anthropic requires matching server_tool_use and result blocks in conversation history.
      */
-    const serverToolTypes = new Set([
-      'server_tool_use',
-      'web_search_tool_result',
-      'web_search_result',
-    ]);
-    const serverToolBlocks = currentContent.filter((c) =>
-      serverToolTypes.has(c.type ?? '')
-    );
+    const serverToolBlocks = currentContent
+      .filter((c) => {
+        const type = c.type ?? '';
+        return (
+          type === 'server_tool_use' ||
+          type === 'web_search_tool_result' ||
+          type === 'web_search_result'
+        );
+      })
+      .map((block) => {
+        const type = block.type;
+        // Sanitize blocks to only include fields Anthropic expects
+        if (type === 'server_tool_use') {
+          // server_tool_use: type, id, name, input
+          return {
+            type: block.type,
+            id: (block as any).id,
+            name: (block as any).name,
+            input: (block as any).input,
+          };
+        } else if (type === 'web_search_tool_result') {
+          // web_search_tool_result: type, tool_use_id, content
+          return {
+            type: block.type,
+            tool_use_id: (block as any).tool_use_id,
+            content: (block as any).content,
+          };
+        } else if (type === 'web_search_result') {
+          // web_search_result: type, url, title, encrypted_content, page_age
+          return {
+            type: block.type,
+            url: (block as any).url,
+            title: (block as any).title,
+            encrypted_content: (block as any).encrypted_content,
+            page_age: (block as any).page_age,
+          };
+        }
+        return block;
+      }) as MessageContentComplex[];
     const textContent = currentContent
       .reduce((acc, curr) => {
         if (curr.type === ContentTypes.TEXT) {
