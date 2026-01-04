@@ -435,12 +435,13 @@ function formatAssistantMessage(
       .trim();
 
     if (serverToolBlocks.length > 0) {
-      // Combine text and server tool blocks in the content array
-      const contentArray: MessageContentComplex[] = [];
+      // Combine server tool blocks and text in the content array
+      // IMPORTANT: server_tool_use must come BEFORE web_search_tool_result (Anthropic requirement)
+      // The blocks are already in order from currentContent, so we put them first, then text
+      const contentArray: MessageContentComplex[] = [...serverToolBlocks];
       if (textContent) {
         contentArray.push({ type: ContentTypes.TEXT, text: textContent });
       }
-      contentArray.push(...serverToolBlocks);
       formattedMessages.push(new AIMessage({ content: contentArray }));
     } else if (textContent) {
       formattedMessages.push(new AIMessage({ content: textContent }));
