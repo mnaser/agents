@@ -161,15 +161,17 @@ export class ChatModelStreamHandler implements t.EventHandler {
       reasoningKey: agentContext.reasoningKey,
       provider: agentContext.provider,
     });
-    const skipHandling = await handleServerToolResult({
+    /**
+     * Process server tool results (web_search, etc.) - dispatches TOOL_END events
+     * but we continue processing to preserve the raw blocks in message content
+     * for multi-turn conversations.
+     */
+    const hasServerToolContent = await handleServerToolResult({
       graph,
       content,
       metadata,
       agentContext,
     });
-    if (skipHandling) {
-      return;
-    }
     this.handleReasoning(chunk, agentContext);
     let hasToolCalls = false;
     if (
@@ -351,6 +353,15 @@ hasToolCallChunks: ${hasToolCallChunks}
             (c as Partial<t.BedrockReasoningContentText>).reasoningText?.text ??
             '',
         })),
+      });
+    } else if (hasServerToolContent) {
+      /**
+       * Handle server tool content (server_tool_use, web_search_tool_result, etc.)
+       * These blocks must be preserved in the message content for multi-turn conversations.
+       * Anthropic requires matching server_tool_use and web_search_tool_result blocks.
+       */
+      await graph.dispatchMessageDelta(stepId, {
+        content,
       });
     }
   }
@@ -582,6 +593,17 @@ export function createContentAggregator(): t.ContentAggregatorResult {
         type: ContentTypes.TOOL_CALL,
         tool_call: newToolCall,
       };
+    } else if (
+      partType === 'server_tool_use' ||
+      partType === 'web_search_tool_result' ||
+      partType === 'web_search_result'
+    ) {
+      /**
+       * Preserve server tool blocks as-is for multi-turn conversations.
+       * Anthropic requires matching server_tool_use and web_search_tool_result blocks
+       * in subsequent messages when continuing a conversation that used web_search.
+       */
+      contentParts[index] = contentPart;
     }
 
     // Apply agentId (for MultiAgentGraph) and groupId (for parallel execution) to content parts

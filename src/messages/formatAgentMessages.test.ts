@@ -1141,4 +1141,188 @@ describe('formatAgentMessages', () => {
     expect(result.messages[1].name).toBe('search');
     expect(result.messages[1].content).toBe('');
   });
+
+  describe('server tool blocks (Anthropic web_search)', () => {
+    it('should preserve server_tool_use and web_search_tool_result blocks in assistant messages', () => {
+      const payload = [
+        {
+          role: 'assistant',
+          content: [
+            {
+              type: ContentTypes.TEXT,
+              [ContentTypes.TEXT]: 'Let me search for that.',
+            },
+            {
+              type: 'server_tool_use',
+              id: 'srvtoolu_abc123',
+              name: 'web_search',
+              input: { query: 'weather in NYC' },
+            },
+            {
+              type: 'web_search_tool_result',
+              tool_use_id: 'srvtoolu_abc123',
+              content: [
+                {
+                  type: 'web_search_result',
+                  url: 'https://example.com',
+                  title: 'Weather Info',
+                  encrypted_content: 'encrypted_data',
+                  page_age: '1 day',
+                },
+              ],
+            },
+            {
+              type: ContentTypes.TEXT,
+              [ContentTypes.TEXT]: 'Based on my search, the weather is sunny.',
+            },
+          ],
+        },
+      ];
+
+      const result = formatAgentMessages(payload);
+
+      expect(result.messages).toHaveLength(1);
+      expect(result.messages[0]).toBeInstanceOf(AIMessage);
+
+      // The content should be an array containing all parts including server tool blocks
+      const content = result.messages[0].content;
+      expect(Array.isArray(content)).toBe(true);
+      expect(content).toHaveLength(4);
+
+      // Verify server tool blocks are preserved
+      const serverToolUse = (content as any[]).find(
+        (c) => c.type === 'server_tool_use'
+      );
+      expect(serverToolUse).toBeDefined();
+      expect(serverToolUse.id).toBe('srvtoolu_abc123');
+      expect(serverToolUse.name).toBe('web_search');
+
+      const searchResult = (content as any[]).find(
+        (c) => c.type === 'web_search_tool_result'
+      );
+      expect(searchResult).toBeDefined();
+      expect(searchResult.tool_use_id).toBe('srvtoolu_abc123');
+    });
+
+    it('should preserve server tool blocks even when THINK content is present', () => {
+      const payload = [
+        {
+          role: 'assistant',
+          content: [
+            {
+              type: ContentTypes.THINK,
+              [ContentTypes.THINK]: 'Reasoning about the search...',
+            },
+            {
+              type: ContentTypes.TEXT,
+              [ContentTypes.TEXT]: 'Searching now.',
+            },
+            {
+              type: 'server_tool_use',
+              id: 'srvtoolu_xyz789',
+              name: 'web_search',
+              input: { query: 'test query' },
+            },
+            {
+              type: 'web_search_tool_result',
+              tool_use_id: 'srvtoolu_xyz789',
+              content: [
+                {
+                  type: 'web_search_result',
+                  url: 'https://test.com',
+                  title: 'Test Result',
+                  encrypted_content: 'data',
+                  page_age: '2 hours',
+                },
+              ],
+            },
+            {
+              type: ContentTypes.TEXT,
+              [ContentTypes.TEXT]: 'Found the results.',
+            },
+          ],
+        },
+      ];
+
+      const result = formatAgentMessages(payload);
+
+      expect(result.messages).toHaveLength(1);
+      expect(result.messages[0]).toBeInstanceOf(AIMessage);
+
+      const content = result.messages[0].content;
+      expect(Array.isArray(content)).toBe(true);
+
+      // Text should be combined and server tool blocks preserved
+      const textParts = (content as any[]).filter(
+        (c) => c.type === ContentTypes.TEXT
+      );
+      const serverToolUse = (content as any[]).find(
+        (c) => c.type === 'server_tool_use'
+      );
+      const searchResult = (content as any[]).find(
+        (c) => c.type === 'web_search_tool_result'
+      );
+
+      // Should have text content (may be combined into single text block)
+      expect(textParts.length).toBeGreaterThanOrEqual(1);
+
+      // Server tool blocks should be preserved
+      expect(serverToolUse).toBeDefined();
+      expect(serverToolUse.id).toBe('srvtoolu_xyz789');
+      expect(searchResult).toBeDefined();
+      expect(searchResult.tool_use_id).toBe('srvtoolu_xyz789');
+
+      // THINK content should not be included
+      const thinkParts = (content as any[]).filter(
+        (c) => c.type === ContentTypes.THINK
+      );
+      expect(thinkParts.length).toBe(0);
+    });
+
+    it('should preserve web_search_result type blocks (alternative result format)', () => {
+      const payload = [
+        {
+          role: 'assistant',
+          content: [
+            {
+              type: 'server_tool_use',
+              id: 'srvtoolu_def456',
+              name: 'web_search',
+              input: { query: 'alternative format' },
+            },
+            {
+              type: 'web_search_result',
+              tool_use_id: 'srvtoolu_def456',
+              content: [
+                {
+                  type: 'web_search_result',
+                  url: 'https://alt.com',
+                  title: 'Alt Result',
+                  encrypted_content: 'alt_data',
+                },
+              ],
+            },
+          ],
+        },
+      ];
+
+      const result = formatAgentMessages(payload);
+
+      expect(result.messages).toHaveLength(1);
+      expect(result.messages[0]).toBeInstanceOf(AIMessage);
+
+      const content = result.messages[0].content;
+      expect(Array.isArray(content)).toBe(true);
+
+      const serverToolUse = (content as any[]).find(
+        (c) => c.type === 'server_tool_use'
+      );
+      const searchResult = (content as any[]).find(
+        (c) => c.type === 'web_search_result'
+      );
+
+      expect(serverToolUse).toBeDefined();
+      expect(searchResult).toBeDefined();
+    });
+  });
 });

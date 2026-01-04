@@ -381,7 +381,20 @@ function formatAssistantMessage(
   }
 
   if (hasReasoning && currentContent.length > 0) {
-    const content = currentContent
+    /**
+     * When reasoning is present, we need to extract text content but also preserve
+     * server tool blocks (server_tool_use, web_search_tool_result) for multi-turn.
+     * Anthropic requires matching server_tool_use and result blocks in conversation history.
+     */
+    const serverToolTypes = new Set([
+      'server_tool_use',
+      'web_search_tool_result',
+      'web_search_result',
+    ]);
+    const serverToolBlocks = currentContent.filter((c) =>
+      serverToolTypes.has(c.type ?? '')
+    );
+    const textContent = currentContent
       .reduce((acc, curr) => {
         if (curr.type === ContentTypes.TEXT) {
           return `${acc}${curr[ContentTypes.TEXT] || ''}\n`;
@@ -390,8 +403,16 @@ function formatAssistantMessage(
       }, '')
       .trim();
 
-    if (content) {
-      formattedMessages.push(new AIMessage({ content }));
+    if (serverToolBlocks.length > 0) {
+      // Combine text and server tool blocks in the content array
+      const contentArray: MessageContentComplex[] = [];
+      if (textContent) {
+        contentArray.push({ type: ContentTypes.TEXT, text: textContent });
+      }
+      contentArray.push(...serverToolBlocks);
+      formattedMessages.push(new AIMessage({ content: contentArray }));
+    } else if (textContent) {
+      formattedMessages.push(new AIMessage({ content: textContent }));
     }
   } else if (currentContent.length > 0) {
     formattedMessages.push(new AIMessage({ content: currentContent }));

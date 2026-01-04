@@ -37,6 +37,7 @@
   ],
   "scripts": {
     "prepare": "node husky-setup.js",
+    "postinstall": "npm run build || true",
     "prepublishOnly": "npm run build",
     "build": "NODE_ENV=production rollup -c && tsc -p tsconfig.build.json",
     "build:dev": "rollup -c",
